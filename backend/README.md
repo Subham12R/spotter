@@ -6,26 +6,63 @@ Django 4.2 + Django REST Framework. Stateless — no database, no sessions, no a
 
 ## Request Lifecycle
 
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant V as PlanTripView
+    participant R as routing.py
+    participant ORS as OpenRouteService
+    participant H as hos_engine.py
+    participant E as eld_builder.py
+
+    C->>V: POST /api/plan-trip/
+    V->>V: TripInputSerializer.validate()
+    alt invalid input
+        V-->>C: 400 { error, field }
+    end
+
+    V->>R: geocode(current_location)
+    V->>R: geocode(pickup_location)
+    V->>R: geocode(dropoff_location)
+    R->>ORS: GET /geocode/search ×3
+    ORS-->>R: GeoJSON features [lng, lat]
+    R-->>V: { lat, lng, label } ×3
+
+    V->>R: get_directions([current, pickup, dropoff])
+    R->>ORS: POST /v2/directions/driving-hgv
+    ORS-->>R: encoded polyline + way_points
+    R-->>V: { total_miles, polyline, segments[2] }
+
+    V->>H: run_simulation(TripInput)
+    H-->>V: { timeline, stops, total_miles, cycle_warning }
+
+    V->>E: build_eld_logs(timeline, date, miles)
+    E-->>V: [ { day, events, totals, hos_check } ]
+
+    V-->>C: 200 { route, eld_logs [, cycle_warning] }
 ```
-POST /api/plan-trip/
-        │
-        ▼
-TripInputSerializer          — validates 4 fields, rejects bad input with 400
-        │
-        ▼
-routing.geocode()  ×3        — text → {lat, lng, label} via ORS /geocode/search
-        │
-        ▼
-routing.get_directions()     — 3-waypoint route → polyline + 2 legs (miles, duration)
-        │
-        ▼
-hos_engine.run_simulation()  — FMCSA HOS state machine → flat timeline of events
-        │
-        ▼
-eld_builder.build_eld_logs() — timeline → per-calendar-day ELD log entries
-        │
-        ▼
-200 JSON { route, eld_logs [, cycle_warning] }
+
+---
+
+## Module Dependency
+
+```mermaid
+graph TD
+    subgraph Django
+        URL[config/urls.py] --> VIEW[trip_planner/views.py]
+        SER[trip_planner/serializers.py] --> VIEW
+    end
+
+    subgraph Pure Python
+        VIEW --> ROU[routing.py]
+        VIEW --> HOS[hos_engine.py]
+        VIEW --> ELD[eld_builder.py]
+        HOS --> ELD
+    end
+
+    subgraph External
+        ROU -->|geocode / directions| ORS[OpenRouteService API]
+    end
 ```
 
 ---
@@ -37,6 +74,23 @@ Pure Python, no Django imports. Wraps OpenRouteService.
 
 - **`geocode(text, field_name)`** — `GET /geocode/search`. ORS returns GeoJSON `[lng, lat]`; swapped to `{lat, lng, label}`. Raises `RoutingError` on HTTP error or empty result.
 - **`get_directions(waypoints)`** — `POST /v2/directions/driving-hgv` (falls back to `driving-car` on 404). ORS returns a Google-encoded polyline string (1e5 precision, not GeoJSON) — decoded inline with `_decode_polyline()`. Legs are split using `way_points` indices from the ORS response; leg distances are scaled proportionally from haversine ratios to preserve ORS road-distance accuracy.
+
+```mermaid
+flowchart LR
+    A[location text] --> B[GET /geocode/search]
+    B --> C["swap [lng,lat] → {lat,lng}"]
+    C --> D["{lat, lng, label}"]
+
+    E["[current, pickup, dropoff]"] --> F[POST /v2/directions/driving-hgv]
+    F -->|404| G[POST /v2/directions/driving-car]
+    F --> H[decode encoded polyline]
+    G --> H
+    H --> I[split legs via way_points indices]
+    I --> J[scale leg distances via haversine ratio]
+    J --> K["{ total_miles, polyline, segments[2] }"]
+```
+
+---
 
 ### `hos_engine.py`
 Pure Python. FMCSA 49 CFR §395.3 state machine. **All time is in absolute minutes from trip epoch (midnight of day 1).**
@@ -51,14 +105,43 @@ State variables tracked per simulation run:
 | `cycle_min_used` | 4200 (70 hr) | never |
 | `miles_since_fuel` | 1000 | fuel stop |
 
-The driving loop checks stop conditions in strict priority order each iteration:
-1. `cycle_min_used >= 4200` → set `cycle_warning`, halt trip
-2. `current_time_min >= window_expires_min` → inject 10-hr rest
-3. `driving_min_today >= 660` → inject 10-hr rest
-4. `miles_since_fuel >= 1000` → inject 30-min fuel stop (On Duty ND)
-5. `cumul_driving_since_break >= 480` → inject 30-min break (On Duty ND)
+#### Simulation Flow
 
-`cycle_min_used` is also included in the `can_drive_min` minimum calculation so a mid-chunk cycle overage is impossible.
+```mermaid
+flowchart TD
+    START([start]) --> OD[emit Off Duty\n0 → shift_start_min]
+    OD --> OPEN[open_shift\nset 14-hr window + pre-trip 30min]
+    OPEN --> SEG0[drive segment 0\ncurrent → pickup]
+    SEG0 --> PU[inject pickup stop\n60 min On Duty ND]
+    PU --> SEG1[drive segment 1\npickup → dropoff]
+    SEG1 --> DO[inject dropoff stop\n60 min On Duty ND]
+    DO --> FILL[fill remainder of day\nwith Off Duty]
+    FILL --> END([return timeline + stops])
+
+    HALT([cycle_warning\nhalted]) -.->|halted flag set| SEG0
+    HALT -.->|halted flag set| SEG1
+```
+
+#### Driving Loop Priority (per iteration)
+
+```mermaid
+flowchart TD
+    LOOP([top of loop\nremaining_miles > 0]) --> C1{cycle_min_used\n≥ 4200?}
+    C1 -->|yes| WARN[set cycle_warning\nfill to midnight\nhalt]
+    C1 -->|no| C2{current_time\n≥ window_expires?}
+    C2 -->|yes| REST[inject 10-hr rest\nopen_shift]
+    REST --> LOOP
+    C2 -->|no| C3{driving_min_today\n≥ 660?}
+    C3 -->|yes| REST
+    C3 -->|no| C4{miles_since_fuel\n≥ 1000?}
+    C4 -->|yes| FUEL[inject 30-min\nfuel stop]
+    FUEL --> LOOP
+    C4 -->|no| C5{cumul_driving\n≥ 480?}
+    C5 -->|yes| BRK[inject 30-min break]
+    BRK --> LOOP
+    C5 -->|no| DRIVE[compute can_drive_min\n= min of all constraints\nemit driving event]
+    DRIVE --> LOOP
+```
 
 Fixed stops (hardcoded durations, not user-configurable):
 
@@ -73,18 +156,26 @@ Fixed stops (hardcoded durations, not user-configurable):
 
 Output: flat list of `TimelineEvent` objects spanning absolute minutes from epoch.
 
+---
+
 ### `eld_builder.py`
 Pure Python. Converts the flat absolute-time timeline into per-calendar-day ELD log entries.
 
-For each day:
-1. Slice timeline events into the `[day_start, day_end)` window; normalize to 0-based minutes
-2. Fill gaps with Off Duty so the day is fully covered
-3. Merge consecutive same-status events
-4. Assert `sum(endMin - startMin) == 1440` — raises `ELDInvariantError` (500) if violated
-5. Compute per-status hour totals
-6. Compute miles driven from `miles_covered` on driving events (proportional overlap for events that straddle midnight)
-7. Build remarks (transition annotations with location label)
-8. Build `hos_check` with driving hours, 14-hr window, cycle used, and `compliant` boolean
+```mermaid
+flowchart TD
+    TL[flat timeline\nTimelineEvent list] --> DAYS[for each calendar day]
+    DAYS --> SLICE[slice events into\nday window 0–1440\nnormalize to 0-based]
+    SLICE --> FILL[fill gaps with\nOff Duty events]
+    FILL --> MERGE[merge consecutive\nsame-status events]
+    MERGE --> ASSERT{sum == 1440?}
+    ASSERT -->|no| ERR[ELDInvariantError\n500]
+    ASSERT -->|yes| TOTALS[compute per-status\nhour totals]
+    TOTALS --> MILES[compute miles driven\nproportional overlap]
+    MILES --> REMARKS[build remarks\ntransition annotations]
+    REMARKS --> HOS[build hos_check\ndriving / window / cycle]
+    HOS --> LOG[day log entry]
+    LOG --> OUT[eld_logs list]
+```
 
 ---
 
@@ -109,7 +200,7 @@ Content-Type: application/json
   "route": {
     "total_miles": 2407.3,
     "total_days": 3,
-    "polyline": [[lat, lng], ...],
+    "polyline": [[lat, lng], "..."],
     "stops": [
       {
         "type": "fuel",
@@ -129,9 +220,9 @@ Content-Type: application/json
       "date": "2026-06-16",
       "miles_driven": 621.0,
       "events": [
-        { "status": "off_duty",    "startMin": 0,   "endMin": 360 },
-        { "status": "on_duty_nd",  "startMin": 360, "endMin": 390 },
-        { "status": "driving",     "startMin": 390, "endMin": 1050 }
+        { "status": "off_duty",   "startMin": 0,   "endMin": 360 },
+        { "status": "on_duty_nd", "startMin": 360, "endMin": 390 },
+        { "status": "driving",    "startMin": 390, "endMin": 1050 }
       ],
       "totals": { "off_duty": 6.0, "driving": 11.0, "on_duty_nd": 0.5, "sleeper_berth": 0.0 },
       "remarks": [
