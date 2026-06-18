@@ -1,10 +1,5 @@
 # ELD Trip Planner — Code Walkthrough
 
-> **Loom script / talking points for assignment submission.**
-> Follow the sections top-to-bottom. Each section maps to one screen share stop.
-
----
-
 ## Demo Input (use this for the live demo)
 
 | Field | Value |
