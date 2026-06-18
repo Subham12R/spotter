@@ -218,7 +218,7 @@ The ELD panel itself is **vertically draggable** — a pill handle at the top fi
 
 ---
 
-## 5. HOS Compliance — Walk the Demo Output
+## 5. HOS Compliance 
 
 With input **Chicago → Dallas → LA, 24.5 hrs used**:
 
@@ -262,10 +262,3 @@ With input **Chicago → Dallas → LA, 24.5 hrs used**:
 
 ---
 
-## 7. What I Would Add Next
-
-- PDF export of ELD log sheets (`html2canvas` → `jsPDF`)
-- Persist trip history in localStorage
-- Sleeper berth split provision (34-hr restart, split 8/2)
-- Adverse driving conditions exception (+2 hrs driving)
-- Unit test suite for `hos_engine.py` edge cases (cycle stress, exact 1440-min invariant)
