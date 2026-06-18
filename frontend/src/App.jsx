@@ -51,15 +51,16 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(formData),
       })
-      const data = await res.json()
+      let data = {}
+      try { data = await res.json() } catch { /* non-JSON body */ }
       if (!res.ok) {
-        toast.error(data.error ?? 'Planning failed — check your inputs.')
+        toast.error(data.error ?? `Server error ${res.status}.`)
       } else {
         setResult(data)
         toast.success(`Route planned — ${data.route.total_miles} mi · ${data.route.total_days} days`)
       }
     } catch {
-      toast.error('Network error — make sure the backend is running on :8000.')
+      toast.error('Network error')
     } finally {
       setLoading(false)
     }
