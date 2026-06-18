@@ -45,7 +45,8 @@ export default function App() {
     setResult(null)
     setStartLocation(formData.current_location)
     try {
-      const res  = await fetch('/api/plan-trip/', {
+      const base = import.meta.env.VITE_API_URL ?? ''
+      const res  = await fetch(`${base}/api/plan-trip/`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(formData),
