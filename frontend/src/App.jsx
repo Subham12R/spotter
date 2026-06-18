@@ -120,6 +120,15 @@ export default function App() {
         </section>
       )}
 
+      <a
+        className="made-by"
+        href="https://subham12r.me"
+        target="_blank"
+        rel="noreferrer"
+      >
+        made by subham12r.me
+      </a>
+
       <Toaster position="top-right" theme="dark" richColors closeButton />
     </div>
   )
