@@ -1,6 +1,6 @@
 # ELD Trip Planner — Code Walkthrough
 
-## Demo Input (use this for the live demo)
+## Demo Input 
 
 | Field | Value |
 |---|---|
