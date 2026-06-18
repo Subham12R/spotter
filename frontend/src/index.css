@@ -1,0 +1,89 @@
+/* Hallmark · macrostructure: Workbench · tone: utilitarian · anchor hue: amber-58°
+ * theme: custom DNA · bg #0a0a0a · panel #171717 · accent #E8A020
+ * display: Playfair Display · body: Nunito Sans · radius: 6px (rounded-md)
+ */
+
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/PlayfairDisplay.ttf') format('truetype');
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Nunito Sans';
+  src: url('/fonts/NunitoSans.ttf') format('truetype');
+  font-weight: 200 900;
+  font-display: swap;
+}
+
+:root {
+  /* Core dark palette — user-specified */
+  --bg:            #0a0a0a;
+  --panel:         #171717;
+  --panel-hi:      #1e1e1e;
+  --input-bg:      #1a1a1a;
+  --hover:         #242424;
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.13);
+
+  /* Text */
+  --text:          #fafafa;
+  --text-muted:    #a3a3a3;
+  --text-subtle:   #525252;
+
+  /* Accent */
+  --amber:         #E8A020;
+  --amber-hover:   #d4891a;
+  --amber-active:  #bf7a16;
+
+  /* Status */
+  --green:         #22c55e;
+  --red:           #ef4444;
+  --blue:          #3b82f6;
+
+  /* ELD status — exact spec */
+  --eld-off:       #4A7FC1;
+  --eld-sleeper:   #9B8FD4;
+  --eld-driving:   #E8A020;
+  --eld-on-duty:   #4CAF50;
+
+  /* Typography */
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body:    'Nunito Sans', system-ui, sans-serif;
+
+  /* Spacing — 4pt scale */
+  --s1:  4px;
+  --s2:  8px;
+  --s3:  12px;
+  --s4:  16px;
+  --s5:  20px;
+  --s6:  24px;
+
+  /* Radius — rounded-md = 6px */
+  --r:  6px;
+  --r2: 10px;
+
+  /* Motion */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --fast: 120ms;
+  --base: 220ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overflow-x: clip;
+}
+body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+#root { height: 100%; }
+button { cursor: pointer; font-family: inherit; border: none; background: none; }
+input  { font-family: inherit; }
